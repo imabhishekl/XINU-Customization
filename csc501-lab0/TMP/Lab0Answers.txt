@@ -1,0 +1,97 @@
+﻿LAB ASSIGNMENT 0
+
+1. Assuming the XINU text begins at address 0x0, draw a rough diagram of            XINU's memory layout with addresses derived from your experimental measurements. Include the information you uncovered from running your version of printsegaddress() and printprocstks().
+=>
+|---------|
+| FREE    |
+| MEMORY  |
+|---------| -> 0x00fffffc <BASE> 
+|         |
+| PR NULL |      0x00ffff3c    <ESP>  
+| STACK   |       0x00fff000    <Limit of PRNULL Stack> 
+|         |
+|---------| -> 0x00ffeff8 <BASE>
+|         |  
+|  MAIN   |    0x00ffefa0   <ESP   >
+|  STACK  |    0x00ffdffc   <Limit of Main Stack>
+|         |
+|---------|
+|  HEAP/  |
+| FREE    |
+| SPACE   |
+|---------| -> 0x00010738 <BSS>
+|  BSS    |
+|---------| -> 0x0000a554 <edata>
+|  DATA   |
+|---------| -> 0x0000898e <etext>
+|  TEXT   |
+|---------| -> 0x00000000
+
+2.  What is the difference in stack top address before and after calling printtos()? Draw a diagram to illustrate what are the contents of the items pushed into the stack between these two time points.	
+The content of the stack before and after call 0x00ffefd0 and 0x00ffefb0.
+=>
+
+|------------|
+|Prev Stack  |
+|  POINTER   | → 0x00ffefd0
+|------------|
+|   RETURN   | 
+|------------|
+|    EBP     | → 0x00ffefc8        
+|------------|       
+|    LV1     | → 0x00ffefc4
+|------------|  
+|    LV2     | → 0x00ffefc0
+|------------|  
+|    LV3     | → 0x00ffefbc
+|------------|
+
+3. Which byte order is adopted in the host machine that we are using? How did you find out?
+=>The byte order used by the system is Little endian.
+By running the below program.
+int main()
+{
+     int i = 1;
+     char *c=(char *)&i;//<this extracts the single byte from the end>
+      if  	(c == '\0')
+           printf(“\nBig Endian”);
+       else
+            printf(“\nLittle Endian”);
+        return 0;
+    }	
+
+OP : Little Endian
+
+4. Briefly describe the mov, push, pusha, pop, and popa instructions in the x86.
+=>
+mov : The mov instruction copies the data referred by the second operand to the location referred by the first operand. The operand here can be either the content of the register or the memory location (loaded into register first).
+
+Eg. mov eax <reg>, edx <reg> 
+
+push : The push instruction pushes the operand specified in the instruction to the top of the stack. The current location of stack is traced by the register ESP whose content is always the address of the top of the stack memory. 
+       Since the stack grows from higher to lower memory for a push operation the content of the stack is first decremented and added to the stack.
+
+Eg: push eax <reg>
+
+pop : The pop instruction fetches out the content of the top of the stack pointed out by stack pointer ESP into the operand specified. After the content is fetched the stack pointed is incremented back.
+
+Eg: pop eax<reg>
+
+pusha: The pusha instruction pushes the content of all the general purpose register onto the stack. The order of register getting pushed are in following order EAX, ECX, EDX, EBX, ESP, EBP, ESI, EDI. 
+       The value of ESP pushed is the value before the instruction is executed. It is useful for saving state before an operation that could potentially change these register.
+
+popa: the popa instruction pops all the general purpose registers off the stack in the reverse order of PUSHA. That is, EDI, ESI, EBP, ESP, EBX, EDX, ECX, EAX. Used to restore state after a call to PUSHA.
+
+
+5. In a stack frame, local variables are stored below the top of the stack. In task 3, does your result show all the local variables declared in your printtos function? 
+   If not, can you explain that? (hint: try to disable the compiler optimization by specifing -O0 in your Makefile)
+=>No the function argument where not printed in stack when the optimization was not disabled.
+When the compiler optimization was disabled the local variable defined in the routine was printed in the reverse order.
+Optimization caused the compiler to not push the local argument in the stack.
+
+
+
+
+
+
+
