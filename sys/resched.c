@@ -1,0 +1,256 @@
+/* resched.c  -  resched */
+
+#include <conf.h>
+#include <kernel.h>
+#include <proc.h>
+#include <q.h>
+#include <sched.h>
+
+unsigned long currSP;	/* REAL sp of current process */
+int epoch_count;
+int sched_type;
+int realtime_q;
+int rt_q[NPROC];
+int rt_q_id;
+int start_debug;
+extern int ctxsw(int, int, int, int);
+/*-----------------------------------------------------------------------
+ * resched  --  reschedule processor to highest priority ready process
+ *
+ * Notes:	Upon entry, currpid gives current process id.
+ *		Proctab[currpid].pstate gives correct NEXT state for
+ *			current process if other than PRREADY.
+ *------------------------------------------------------------------------
+ */
+
+void setschedclass(int id)
+{
+    sched_type = id;
+}
+
+int get_goodness_value(proc_id)
+{
+	if (proctab[proc_id].remaining_tick > 0)
+        {
+           return (proctab[proc_id].pprio + proctab[proc_id].remaining_tick);
+        }
+        else
+        {
+	   return 0;
+        }
+}
+
+int should_it_be_selected(int q,int index)
+{
+    if(q == YES)
+    {
+       return (proctab[index].is_create_real == YES);
+    }
+    return 1;
+}
+
+int resched()
+{
+        register struct pentry  *optr;  /* pointer to old process entry */
+        register struct pentry  *nptr;  /* pointer to new process entry */
+        int i = 0;
+        int goodness = 0,preempt_value=0;
+        int proc_index = 0;
+        int max = 0;
+        int prev_proc_id = 0;
+        int random = 0;
+	//xinu_scheduler();
+        //return OK;
+
+        //kprintf("\nIn Resched with YES and NO as %d %d",YES,NO);
+
+        optr= &proctab[currpid];
+
+        /* Check is the epoch is the current one or new needs to be started by checking the is_curr_epoch_ind */
+//        //kprintf("\nEpoch count %d",epoch_count);
+        /*for(i = 1 ; i < NPROC && epoch_completed == YES && epoch_count == 0 ; i++)
+        {
+           //kprintf("  pstate %d,is_curr_epoch %d,i %d",proctab[i].pstate,proctab[i].is_curr_epoch,i);
+	   if((proctab[i].pstate == PRCURR || proctab[i].pstate == PRREADY) &&
+               proctab[i].is_curr_epoch == YES)
+           {
+               //kprintf("  1 Found a Proc %d and goodness %d",i,get_goodness_value(i));
+	       if(get_goodness_value(i) > 0)
+               {
+                  //kprintf("  found a goodness non zero value");
+                  epoch_completed = NO;
+               }
+           }
+        }*/
+
+        if(epoch_count == 0)
+        {
+	    /* Since the current EPOCH is completed we need to compute the new set of process set for next epoc */
+            /* Reset the EPOCH  */
+            //kprintf(" Creating a new epoch");
+            realtime_q = NO;
+
+            //kprintf("\nsched_type %d",sched_type);
+            if(IS_SCHED_TYPE_M_Q(sched_type))
+            {
+                random = rand() % 10;
+
+                //kprintf("  rand:<%d>  ",random);
+
+                if(random > 3)
+	           realtime_q = YES;
+            }
+            for(i = 1 ; i < NPROC ; i++)
+            {
+               //kprintf("\nInside loop for setting new epoch");
+               //if (start_debug == 1) kprintf("<pid:%d,n:%s,st:%d>",i,proctab[i].pname,proctab[i].pstate);
+               proctab[i].is_curr_epoch = NO;
+
+               
+
+               if((proctab[i].pstate == PRCURR || proctab[i].pstate == PRREADY) && should_it_be_selected(realtime_q,i))
+               {
+                   //if (start_debug == 1) kprintf("<pid:%d,n:%s>",i,proctab[i].pname);
+                   if((realtime_q == YES) && (proctab[i].is_create_real == YES))
+                   {
+                       epoch_count = epoch_count + NEW_QUANTUM;
+                       rt_q[rt_q_id++]=i;       
+                       //if (start_debug == 1) kprintf(" rt n:%s,ep:%d",proctab[i].pname,epoch_count);
+                   }
+                   else if(proctab[i].is_create_real == NO)
+                   {
+                       //default();
+                       //kprintf(" Found a epoch with running or ready process %d  pr:%d  rt:%d",i,proctab[i].pprio,proctab[i].remaining_tick);
+                       proctab[i].remaining_tick = proctab[i].pprio;
+                       epoch_count = epoch_count + proctab[i].pprio;
+                       proctab[i].is_curr_epoch = YES;
+                       //kprintf("  normal q n:%s  prio:%d  ",proctab[i].pname, proctab[i].pprio);
+                   }
+               }
+            }
+        }
+//	kprintf("\nEpoch count:%d",epoch_count);
+        //kprintf("\nChecking largest goodness value");
+        /* Find process with largest goodness value for scheduling */
+        for(i = 1 ; i < NPROC && realtime_q == NO; i++)
+        {
+           //kprintf("\nInside loop for checking larges goodness");
+           //kprintf("\nis_curr_epoch%d : %d",i,proctab[i].is_curr_epoch);
+           if((proctab[i].pstate == PRCURR || proctab[i].pstate == PRREADY) &&
+               proctab[i].is_curr_epoch == YES)
+           {
+               //kprintf("  Found a running process with pid = %d and goodness = %d",i,get_goodness_value(i));
+               if((goodness = get_goodness_value(i)) > max)
+               {
+                   max = goodness;
+                   proc_index = i;
+                   //kprintf("  max = %d",max);
+               }
+           }
+        }
+        if(realtime_q == YES)
+        {
+           /* Select the next process */
+           if(rt_q_id > 0)
+              proc_index = rt_q[--rt_q_id];
+           if(proc_index == 0)
+		resched();
+           //if (start_debug == 1) kprintf("  rt_q_id<%d>  ",proc_index);
+        }
+
+/*if(proc_index == 0)
+                resched();
+  */      
+        //kprintf("id %d, ep %d,rt %d ",proc_index,epoch_count,realtime_q);
+
+        /* Once we get the next process to schedule handle the current one */
+        if(proctab[currpid].pstate == PRCURR)
+           proctab[currpid].pstate =  PRREADY;
+
+        //insert(currpid,rdyhead,proctab[currpid].pprio);
+
+	prev_proc_id = currpid;
+        currpid = proc_index;
+        proctab[currpid].pstate = PRCURR;
+
+        /* update the quantum */
+        //kprintf("  remaining_tick %d",proctab[currpid].remaining_tick);
+       
+        if(realtime_q == YES)
+        {
+            preempt_value = NEW_QUANTUM;
+        }
+        else
+        {
+	    if(proctab[currpid].remaining_tick >= QUANTUM)
+            {
+            //  kprintf("  Default");
+                preempt_value = QUANTUM;
+            }
+            else if(proctab[currpid].remaining_tick > 0)
+            {
+             //  kprintf(" Customize");
+                 preempt_value = proctab[currpid].remaining_tick;
+            }
+            proctab[currpid].remaining_tick = proctab[currpid].remaining_tick - preempt_value;
+            //epoch_count = epoch_count - preempt_value;
+        }
+        
+        if (start_debug == 1) kprintf("  new preempt %d",preempt_value);
+        //proctab[currpid].remaining_tick = proctab[currpid].remaining_tick - preempt_value;
+
+        epoch_count = epoch_count - preempt_value;
+
+        /*if(currpid == prev_proc_id)
+           return OK;*/
+
+        if (start_debug == 1) kprintf("  remaining_tick %d",proctab[currpid].remaining_tick);
+        if (start_debug == 1) kprintf("  End Epoch count %d",epoch_count);
+        nptr = &proctab[currpid];
+        nptr->pstate = PRCURR;          /* mark it currently running    */
+
+        //sleep(2);
+
+#ifdef  RTCLOCK
+        preempt = preempt_value;              /* reset preemption counter     */
+#endif
+
+        ctxsw((int)&optr->pesp, (int)optr->pirmask, (int)&nptr->pesp, (int)nptr->pirmask);
+
+        /* The OLD process returns here when resumed. */
+        return OK;
+}
+
+int xinu_scheduler()
+{
+	register struct pentry  *optr;  /* pointer to old process entry */
+        register struct pentry  *nptr;  /* pointer to new process entry */
+
+        /* no switch needed if current process priority higher than next */
+
+        if ( ( (optr= &proctab[currpid])->pstate == PRCURR) &&
+           (lastkey(rdytail)<optr->pprio)) {
+                return(OK);
+        }
+
+        /* force context switch */
+
+        if (optr->pstate == PRCURR) {
+                optr->pstate = PRREADY;
+                insert(currpid,rdyhead,optr->pprio);
+        }
+
+        /* remove highest priority process at end of ready list */
+
+        nptr = &proctab[ (currpid = getlast(rdytail)) ];
+        nptr->pstate = PRCURR;          /* mark it currently running    */
+#ifdef  RTCLOCK
+        preempt = QUANTUM;              /* reset preemption counter     */
+#endif
+
+        ctxsw((int)&optr->pesp, (int)optr->pirmask, (int)&nptr->pesp, (int)nptr->pirmask);
+
+        /* The OLD process returns here when resumed. */
+        return OK;
+
+}

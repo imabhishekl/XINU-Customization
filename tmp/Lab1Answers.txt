@@ -1,0 +1,23 @@
+Xinu Scheduler:
+Description:
+Xinu scheduler also knows highest priority scheduler schedules the highest priority process first.
+Advantage:
+Easy to implement and highest priority process are always given the prefernce to work which makes sure they are alwasy executed.
+Disadvantage:
+Starvation because highest priority process always get prefernce over lowest one even though the lowest priority thread was in the system for long time
+
+Linux Scheduler:
+Description:
+Epoch is created with ready process but time as per priority
+Advantage:
+This scheduler makes sure all the process gets the time as per priority so low starvation but time is shared as per priority.
+Disadvantage:
+High computation over head because we need to compute the epoch every time it ends which is based on current ready process in queue.
+
+Multi Level Queue:
+Description:
+Realtime process execute in a round robin fashion for that epoch
+Advantage:
+Real time process priority is high and low starvation as normal queue is also there for execution.
+Disadvantage:
+Distribution is depended on random number which should be proper for better selection of process and low starvation.
