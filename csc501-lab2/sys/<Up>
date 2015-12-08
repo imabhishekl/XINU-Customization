@@ -1,0 +1,170 @@
+/* frame.c - manage physical frames */
+#include <conf.h>
+#include <kernel.h>
+#include <proc.h>
+#include <paging.h>
+
+/*-------------------------------------------------------------------------
+ * init_frm - initialize frm_tab
+ *-------------------------------------------------------------------------
+ */
+fr_map_t frm_tab[NFRAMES];
+int page_replace_policy;
+int fifo_count;
+
+SYSCALL init_frm()
+{
+  int i = 0;
+  kprintf("\nInit Page Frame!\n");
+  for(i = 0;i < NFRAMES;i++)
+  {
+     frm_tab[i].fr_status = FRM_UNMAPPED;
+     frm_tab[i].fr_pid = -1;
+     frm_tab[i].fr_loadtime = 0;
+  }
+  return OK;
+}
+
+long get_and_set_frame_for_pdb()
+{
+   int i = 0;
+   pd_t *global_pd;
+   unsigned int pdb_addr = (FRAME0 + get_frm(FR_DIR,0))*NBPG;
+   pd_t *pde = (pd_t *)pdb_addr;
+   global_pd = (pd_t *)proctab[0].pdbr;
+
+   for(i = 0;i < 4;i++)
+   {
+      pde->pd_pres = 1;
+      pde->pd_write = 1;
+      pde->pd_base = (global_pd + i)->pd_base;
+      pde = pde + 1;
+   }
+   return pdb_addr;
+}
+
+/*-------------------------------------------------------------------------
+ * get_frm - get a free frame according page replacement policy
+ *-------------------------------------------------------------------------
+ */
+SYSCALL get_frm(int virt_page,int frame_type)
+{
+  int i;
+  int frame_no;
+  for(i = 0;i < NFRAMES;i++)
+  {
+     //kprintf("\nFrame %d has %d",(i + 1024),frm_tab[i].fr_status);
+     if(frm_tab[i].fr_status == FRM_UNMAPPED)
+     {
+        /* Found a Free Frame */
+        frm_tab[i].fr_status = FRM_MAPPED;
+        frm_tab[i].fr_type = frame_type;
+        frm_tab[i].fr_pid = currpid;
+        frm_tab[i].fr_vpno = virt_page;
+        return i;
+     }
+  }
+
+  /* Didnt found a free frame time to replace it */
+  frame_no = getReplaceFrame();
+
+  return OK;
+}
+
+int getReplaceFrame()
+{
+   int fifo_count_ret;
+   if(page_replace_policy == FIFO)
+   {
+     fifo_count_ret = fifo_count;
+     fifo_count++;
+     fifo_count = (fifo_count%1024 == 0) ? 6:fifo_count%1024;
+     return fifo_count_ret;
+   }
+   else if(page_replace_policy == LRU)
+   {
+
+   }
+}
+
+int get_proc_bs_id(int pid,int virtpage)
+{
+   int i;
+   for(i = 0;i < TOTAL_BS;i++)
+   {
+      //kprintf("\nS<%d><%d>",proctab[pid].bs_list[i].bs_vpno,virtpage);
+      //if((proctab[pid].bs_list[i].bs_vpno <= virtpage) && ((proctab[pid].bs_list[i].bs_vpno + proctab[pid].bs_list[i].bs_npages) >= virtpage))
+      if(proctab[pid].bs_list[i].bs_vpno = virtpage)
+      {
+         return i;
+      }
+   }
+   return -1;
+}
+
+int write_back_data(int pid)
+{
+   int i = 0;
+   int bs_id;
+   int vpno;
+   //kprintf("\nWPID<%d>\n",pid);
+   for(i = 0;i < NFRAMES;i++)
+   {
+      //kprintf("<%d>",frm_tab[i].fr_pid);
+      //kprintf("\nW<%d><%d><%d><%d><%d>",pid,i,bs_id,frm_tab[i].fr_vpno,frm_tab[i].fr_type);
+      if(frm_tab[i].fr_pid == pid && frm_tab[i].fr_vpno > 4096 && frm_tab[i].fr_type == FR_PAGE)
+      {
+         bs_id = get_proc_bs_id(pid,frm_tab[i].fr_vpno);
+         vpno = frm_tab[i].fr_vpno;
+         //kprintf("\nW<%d><%d><%d><%d><%d>",i,bs_id,vpno,pid,frm_tab[i].fr_pid);
+         if(bs_id != -1)
+         {
+            kprintf("\nFound BS<%d> for write back<%d><%d><%d>",bs_id,vpno,i,(vpno - proctab[pid].bs_list[bs_id].bs_vpno));
+            write_bs((char *)((i + FRAME0)*NBPG),bs_id,(vpno - proctab[pid].bs_list[bs_id].bs_vpno));
+            //return OK;
+         }
+         else
+         {
+            //kprintf("\nDidnt Found Page");
+         }
+      }
+   }   
+}
+
+int read_back_data(int pid)
+{
+   int i = 0;
+   int bs_id;
+   int vpno;
+   //kprintf("\nRPID<%d>\n",pid);
+   for(i = 0;i < NFRAMES;i++)
+   {
+      if(frm_tab[i].fr_pid == pid && frm_tab[i].fr_vpno > 4096 && frm_tab[i].fr_type == FR_PAGE)
+      {
+         bs_id = get_proc_bs_id(pid,frm_tab[i].fr_vpno);
+         vpno = frm_tab[i].fr_vpno;
+         //kprintf("\nR<%d><%d><%d><%d><%d>",i,bs_id,vpno,pid,frm_tab[i].fr_pid);
+         if(bs_id != -1)
+         {
+            kprintf("\nFound BS<%d> for read back<%d><%d><%d>",bs_id,vpno,i,(vpno - proctab[pid].bs_list[bs_id].bs_vpno));
+            read_bs((char *)((i + FRAME0)*NBPG),bs_id,(vpno - proctab[pid].bs_list[bs_id].bs_vpno));
+            //return OK;
+         }
+         else
+         {
+            //kprintf("\nDidnt Found Page");
+         }
+      }
+   }
+}
+
+/*-------------------------------------------------------------------------
+ * free_frm - free a frame 
+ *-------------------------------------------------------------------------
+ */
+SYSCALL free_frm(int i)
+{
+
+  kprintf("To be implemented!\n");
+  return OK;
+}

@@ -1,0 +1,57 @@
+/* freemem.c - vfreemem */
+
+#include <conf.h>
+#include <kernel.h>
+#include <mem.h>
+#include <stdio.h>
+#include <paging.h>
+#include <proc.h>
+extern struct pentry proctab[];
+
+/*------------------------------------------------------------------------
+ *  vfreemem  --  free a memory block, returning it to vmemlist
+ *------------------------------------------------------------------------
+ */
+SYSCALL	vfreemem(struct mblock *block, unsigned size)
+{
+	STATWORD ps;    
+	struct	mblock	*p, *q;
+	unsigned top;
+        unsigned max_heap_limit = 2048*NBPG + proctab[currpid].store*128*NBPG + proctab[currpid].vhpnpages*NBPG - 1; /* End address of BS */
+        unsigned min_heap_limit = 2048*NBPG + proctab[currpid].store*128*NBPG;
+        /* update the block reference to BS instead of the virtual address space */
+        //block = (struct mblock *)(2048*NBPG + proctab[currpid].store*128*NBPG + ((unsigned int)block - 4096*NBPG));
+        disable(ps);
+
+	if (size==0 || (unsigned)block>(unsigned)max_heap_limit
+	    || ((unsigned)block)<((unsigned) &min_heap_limit))
+        {
+                kprintf("\nFree");
+                restore(ps);
+		return(SYSERR);
+        }
+	size = (unsigned)roundmb(size);
+	for( p=proctab[currpid].vmemlist->mnext,q= &proctab[currpid].vmemlist;
+	     p != (struct mblock *) NULL && p < block ;
+	     q=p,p=p->mnext )
+		;
+	if (((top=q->mlen+(unsigned)q)>(unsigned)block && q!= &proctab[currpid].vmemlist) ||
+	    (p!=NULL && (size+(unsigned)block) > (unsigned)p )) {
+		restore(ps);
+		return(SYSERR);
+	}
+	if ( q!= &proctab[currpid].vmemlist && top == (unsigned)block )
+			q->mlen += size;
+	else {
+		block->mlen = size;
+		block->mnext = p;
+		q->mnext = block;
+		q = block;
+	}
+	if ( (unsigned)( q->mlen + (unsigned)q ) == (unsigned)p) {
+		q->mlen += p->mlen;
+		q->mnext = p->mnext;
+	}
+	restore(ps);
+	return(OK);
+}
